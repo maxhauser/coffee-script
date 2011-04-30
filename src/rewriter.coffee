@@ -18,6 +18,7 @@ class exports.Rewriter
   # like this. The order of these passes matters -- indentation must be
   # corrected before implicit parentheses can be wrapped around blocks of code.
   rewrite: (@tokens) ->
+    @rewriteContinuations()
     @removeLeadingNewlines()
     @removeMidExpressionNewlines()
     @closeOpenCalls()
@@ -28,7 +29,31 @@ class exports.Rewriter
     @addImplicitParentheses()
     @ensureBalance BALANCED_PAIRS
     @rewriteClosingParens()
+    @transformContinuations()
     @tokens
+
+  rewriteContinuations: ->
+    @scanTokens (token, i, tokens) ->
+      if token[0] is '|>'
+        token[0] = '=>'
+        token[3] = true
+      1
+
+  transformContinuations: ->
+    continuations = []
+    indentlevel = 0
+    @scanTokens (token, i, tokens) ->
+      [tag] = token
+      indentlevel++ if tag is 'INDENT'
+      indentlevel-- if tag is 'OUTDENT'
+      if tag is '=>' && token[3] is true 
+        continuations.push { level:indentlevel, tokens:tokens.splice i+2, 3 }
+      if tag is 'OUTDENT' && continuations.length > 0 && continuations[continuations.length-1].level is indentlevel
+        p = [i,0]
+        Array.prototype.push.apply p, continuations.pop().tokens.splice 0, 2
+        tokens.splice.apply tokens, p
+      1
+    continuations.forEach (cont) => Array.prototype.push.apply @tokens, cont.tokens
 
   # Rewrite the token stream, looking one token ahead and behind.
   # Allow the return value of the block to tell us how many tokens to move
